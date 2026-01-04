@@ -4,20 +4,20 @@ on:
   workflow_dispatch:
     inputs:
       file_url:
-        description: 'Direct download link'
+        description: 'Direct download link to the asset'
         required: true
         type: string
       custom_name:
-        description: 'Custom filename (optional)'
+        description: 'Optional: Custom filename for the asset'
         required: false
         type: string
         default: ''
       docker_repo:
-        description: 'Docker Hub repository'
+        description: 'Docker Hub repository name'
         required: true
         type: string
       docker_tag:
-        description: 'Image tag'
+        description: 'Image tag (e.g., latest, v1.0)'
         required: true
         type: string
         default: 'latest'
@@ -37,8 +37,11 @@ jobs:
         run: |
           echo "::group::System Preparation"
           sudo apt-get update -qq
-          sudo apt-get install -y aria2 python3-pip -qq > /dev/null 2>&1
-          pip3 install -q requests aria2p
+          sudo apt-get install -y aria2 python3-pip -qq
+          python3 -m pip install --upgrade pip setuptools wheel -q
+          python3 -m pip install requests aria2p -q
+          python3 -c "import aria2p; print('✓ aria2p installed')"
+          echo "Environment ready"
           echo "::endgroup::"
       
       - name: Fetch Execution Logic
@@ -80,6 +83,19 @@ jobs:
       - name: Deployment Summary
         run: |
           SIZE=$(docker images ${{ secrets.DOCKER_USER }}/${{ inputs.docker_repo }}:${{ inputs.docker_tag }} --format "{{.Size}}")
-          echo "✅ Image: ${{ secrets.DOCKER_USER }}/${{ inputs.docker_repo }}:${{ inputs.docker_tag }}"
-          echo "✅ Size: $SIZE"
-          echo "✅ Pull: docker pull ${{ secrets.DOCKER_USER }}/${{ inputs.docker_repo }}:${{ inputs.docker_tag }}"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "✅ Image Published"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "Repository: ${{ secrets.DOCKER_USER }}/${{ inputs.docker_repo }}"
+          echo "Tag: ${{ inputs.docker_tag }}"
+          echo "Size: $SIZE"
+          echo ""
+          echo "Pull Command:"
+          echo "docker pull ${{ secrets.DOCKER_USER }}/${{ inputs.docker_repo }}:${{ inputs.docker_tag }}"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+      
+      - name: Cleanup
+        if: always()
+        run: |
+          docker system prune -af --volumes || true
+          rm -rf workspace .sync.py || true
