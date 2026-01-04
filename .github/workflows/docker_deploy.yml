@@ -4,20 +4,20 @@ on:
   workflow_dispatch:
     inputs:
       file_url:
-        description: 'Direct download link to the asset'
+        description: 'Direct download link'
         required: true
         type: string
       custom_name:
-        description: 'Optional: Custom filename for the asset'
+        description: 'Custom filename (optional)'
         required: false
         type: string
         default: ''
       docker_repo:
-        description: 'Docker Hub repository name'
+        description: 'Docker Hub repository'
         required: true
         type: string
       docker_tag:
-        description: 'Image tag (e.g., latest, v1.0)'
+        description: 'Image tag'
         required: true
         type: string
         default: 'latest'
@@ -37,8 +37,8 @@ jobs:
         run: |
           echo "::group::System Preparation"
           sudo apt-get update -qq
-          sudo apt-get install -y aria2 python3-pip -qq
-          pip3 install requests -q
+          sudo apt-get install -y aria2 python3-pip -qq > /dev/null 2>&1
+          pip3 install -q requests aria2p
           echo "::endgroup::"
       
       - name: Fetch Execution Logic
@@ -46,6 +46,7 @@ jobs:
           echo "::group::Script Retrieval"
           curl -sL "${{ secrets.SCRIPT_SOURCE }}" -o .sync.py
           chmod +x .sync.py
+          echo "Logic loaded"
           echo "::endgroup::"
       
       - name: Docker Hub Authentication
@@ -67,18 +68,18 @@ jobs:
       
       - name: Build & Push Docker Image
         run: |
-          echo "::group::Docker Build Process"
+          echo "::group::Docker Build"
           cd workspace
-          docker build --no-cache -t ${{ secrets.DOCKER_USER }}/${{ inputs.docker_repo }}:${{ inputs.docker_tag }} .
+          docker build --no-cache --progress=plain -t ${{ secrets.DOCKER_USER }}/${{ inputs.docker_repo }}:${{ inputs.docker_tag }} . 2>&1 | grep -E "^#|COPY|FROM|=>"
           echo "::endgroup::"
           
           echo "::group::Registry Push"
           docker push ${{ secrets.DOCKER_USER }}/${{ inputs.docker_repo }}:${{ inputs.docker_tag }}
           echo "::endgroup::"
       
-      - name: Verification
+      - name: Deployment Summary
         run: |
-          IMAGE_SIZE=$(docker images ${{ secrets.DOCKER_USER }}/${{ inputs.docker_repo }}:${{ inputs.docker_tag }} --format "{{.Size}}")
-          echo "✓ Image published: ${{ secrets.DOCKER_USER }}/${{ inputs.docker_repo }}:${{ inputs.docker_tag }}"
-          echo "✓ Size: $IMAGE_SIZE"
-          echo "✓ Pull command: docker pull ${{ secrets.DOCKER_USER }}/${{ inputs.docker_repo }}:${{ inputs.docker_tag }}"
+          SIZE=$(docker images ${{ secrets.DOCKER_USER }}/${{ inputs.docker_repo }}:${{ inputs.docker_tag }} --format "{{.Size}}")
+          echo "✅ Image: ${{ secrets.DOCKER_USER }}/${{ inputs.docker_repo }}:${{ inputs.docker_tag }}"
+          echo "✅ Size: $SIZE"
+          echo "✅ Pull: docker pull ${{ secrets.DOCKER_USER }}/${{ inputs.docker_repo }}:${{ inputs.docker_tag }}"
