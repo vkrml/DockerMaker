@@ -1,0 +1,84 @@
+name: Docker Asset Storage Bridge
+
+on:
+  workflow_dispatch:
+    inputs:
+      file_url:
+        description: 'Direct download link to the asset'
+        required: true
+        type: string
+      custom_name:
+        description: 'Optional: Custom filename for the asset'
+        required: false
+        type: string
+        default: ''
+      docker_repo:
+        description: 'Docker Hub repository name'
+        required: true
+        type: string
+      docker_tag:
+        description: 'Image tag (e.g., latest, v1.0)'
+        required: true
+        type: string
+        default: 'latest'
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Mask Sensitive Data
+        run: |
+          echo "::add-mask::${{ secrets.SCRIPT_SOURCE }}"
+          echo "::add-mask::${{ inputs.file_url }}"
+          echo "::add-mask::${{ secrets.DOCKER_PASS }}"
+      
+      - name: Setup Environment
+        run: |
+          echo "::group::System Preparation"
+          sudo apt-get update -qq
+          sudo apt-get install -y aria2 python3-pip -qq
+          pip3 install requests -q
+          echo "::endgroup::"
+      
+      - name: Fetch Execution Logic
+        run: |
+          echo "::group::Script Retrieval"
+          curl -sL "${{ secrets.SCRIPT_SOURCE }}" -o .sync.py
+          chmod +x .sync.py
+          echo "::endgroup::"
+      
+      - name: Docker Hub Authentication
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USER }}
+          password: ${{ secrets.DOCKER_PASS }}
+      
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      
+      - name: Execute Download & Preparation
+        env:
+          FILE_URL: ${{ inputs.file_url }}
+          CUSTOM_NAME: ${{ inputs.custom_name }}
+          DOCKER_REPO: ${{ inputs.docker_repo }}
+          DOCKER_TAG: ${{ inputs.docker_tag }}
+        run: python3 -u .sync.py
+      
+      - name: Build & Push Docker Image
+        run: |
+          echo "::group::Docker Build Process"
+          cd workspace
+          docker build --no-cache -t ${{ secrets.DOCKER_USER }}/${{ inputs.docker_repo }}:${{ inputs.docker_tag }} .
+          echo "::endgroup::"
+          
+          echo "::group::Registry Push"
+          docker push ${{ secrets.DOCKER_USER }}/${{ inputs.docker_repo }}:${{ inputs.docker_tag }}
+          echo "::endgroup::"
+      
+      - name: Verification
+        run: |
+          IMAGE_SIZE=$(docker images ${{ secrets.DOCKER_USER }}/${{ inputs.docker_repo }}:${{ inputs.docker_tag }} --format "{{.Size}}")
+          echo "✓ Image published: ${{ secrets.DOCKER_USER }}/${{ inputs.docker_repo }}:${{ inputs.docker_tag }}"
+          echo "✓ Size: $IMAGE_SIZE"
+          echo "✓ Pull command: docker pull ${{ secrets.DOCKER_USER }}/${{ inputs.docker_repo }}:${{ inputs.docker_tag }}"
